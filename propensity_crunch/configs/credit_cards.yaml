@@ -1,0 +1,39 @@
+# Copy this per product -> 10 files, ONE schema. Diffable, non-coder-editable.
+product: credit_cards
+table: retail.feature_snapshot_monthly
+id_col: cif
+month_col: snapshot_month
+
+obs_date:   2026-03-01     # train / within-month CV (each CIF appears once)
+oot_date:   2026-06-01     # OOT validation (>= window after obs; no window overlap)
+infer_date: 2026-08-01     # scoring
+
+features_include:          # curated candidate set — NO automated selection
+  - age
+  - tenure_months
+  - salary_band
+  - avg_balance_3m
+  - txn_count_3m
+  # ... the rest of the curated list
+
+features_exclude:          # removed AFTER leakage review — a human decision
+  - card_active_flag       # example: direct proxy of the target
+
+eligibility_expr: "eligible_segment = 1 AND is_cardholder = 0"   # product-specific
+
+target:
+  kind: product_flag       # usage_threshold | product_flag | origination
+  window_months: 3
+  flag_col: card_active_flag
+  activity_table: retail.card_activity_monthly
+
+model:
+  time_budget: 300
+  estimator_list: [lgbm, xgboost, rf, extra_tree]
+  n_splits: 5
+  seed: 42
+
+metric: roc_auc            # declared BEFORE results
+baseline: population_base_rate
+min_base_rate: 0.001
+max_base_rate: 0.60
