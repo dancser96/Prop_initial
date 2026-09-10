@@ -1,0 +1,40 @@
+# FX Activation — one of the topology-clean products, used as the template.
+product: fx_activation
+table: "hdfs:///retail/snapshots/fx_activation"   # single output of Data Creation
+id_col: cif
+month_col: snapshot_month
+
+obs_date:   2026-03-01     # train / within-month CV
+oot_date:   2026-06-01     # OOT validation (3m gap == window; no overlap)
+infer_date: 2026-08-01     # scoring
+
+features_include:          # curated candidate set — NO automated selection
+  - age
+  - tenure_months
+  - salary_band
+  - avg_balance_3m
+  - txn_count_3m
+  - travel_txn_flag_6m
+  - foreign_merchant_txn_3m
+  - digital_login_count_1m
+  - fx_txn_count_3m         # backward-rollup feature from Data Creation
+  # ... the rest of the curated list
+
+features_exclude:          # filled AFTER the Feature Checks notebook (human decision)
+  - fx_fwd_txn_3m           # the raw forward signal the target was built from — a leak
+
+eligibility_expr: "eligible_segment = 1 AND is_fx_active = 0"   # eligible, not yet active
+
+target_col: fx_activation_target   # materialised in Data Creation (forward rollup + threshold)
+window_months: 3                   # forward window used to build the target
+
+model:
+  time_budget: 300
+  estimator_list: [lgbm, xgboost, rf, extra_tree]
+  n_splits: 5
+  seed: 42
+
+metric: roc_auc            # declared BEFORE results
+baseline: population_base_rate
+min_base_rate: 0.001
+max_base_rate: 0.60

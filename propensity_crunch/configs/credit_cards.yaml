@@ -1,14 +1,14 @@
-# Copy this per product -> 10 files, ONE schema. Diffable, non-coder-editable.
+# Credit Cards — second example. Copy this shape per product; ONE schema.
 product: credit_cards
-table: retail.feature_snapshot_monthly
+table: "hdfs:///retail/snapshots/credit_cards"
 id_col: cif
 month_col: snapshot_month
 
-obs_date:   2026-03-01     # train / within-month CV (each CIF appears once)
-oot_date:   2026-06-01     # OOT validation (>= window after obs; no window overlap)
-infer_date: 2026-08-01     # scoring
+obs_date:   2026-03-01
+oot_date:   2026-06-01
+infer_date: 2026-08-01
 
-features_include:          # curated candidate set — NO automated selection
+features_include:
   - age
   - tenure_months
   - salary_band
@@ -16,16 +16,12 @@ features_include:          # curated candidate set — NO automated selection
   - txn_count_3m
   # ... the rest of the curated list
 
-features_exclude:          # removed AFTER leakage review — a human decision
-  - card_active_flag       # example: direct proxy of the target
+features_exclude: []       # decide in the Feature Checks notebook
 
-eligibility_expr: "eligible_segment = 1 AND is_cardholder = 0"   # product-specific
+eligibility_expr: "eligible_segment = 1 AND is_cardholder = 0"
 
-target:
-  kind: product_flag       # usage_threshold | product_flag | origination
-  window_months: 3
-  flag_col: card_active_flag
-  activity_table: retail.card_activity_monthly
+target_col: card_activation_target
+window_months: 3
 
 model:
   time_budget: 300
@@ -33,7 +29,7 @@ model:
   n_splits: 5
   seed: 42
 
-metric: roc_auc            # declared BEFORE results
+metric: roc_auc
 baseline: population_base_rate
 min_base_rate: 0.001
 max_base_rate: 0.60

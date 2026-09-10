@@ -1,33 +1,21 @@
-"""SEAM 1 — the config spine.
+"""SEAM 1 — the config spine. ONE schema all product configs conform to,
+validated on load. Pydantic v2.
 
-ONE schema all 10 product configs conform to, validated on load. This is the
-piece that transfers verbatim to the framework. Pydantic v2.
-
-What it validates: config SHAPE + temporal-safety preconditions. NOT the data.
-(Column-resolution against the real snapshot is a runtime check in io.py, since
-it needs the table.)
+Target creation is decoupled from this spine: the target is materialised as a
+column during the Data Creation stage, and the config only names that column
+(`target_col`) plus the forward window length (`window_months`) it was built
+with. `window_months` is still needed here to enforce the train/OOT
+no-overlap rule.
 """
 from __future__ import annotations
 
 from datetime import date
-from pathlib import Path
-from typing import Literal, Optional
+from typing import Optional
 
 import yaml
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 ALLOWED_METRICS = {"roc_auc", "average_precision", "log_loss"}
-
-
-class TargetSpec(BaseModel):
-    # ONE parameterised definition. Divergent EVENT semantics (loan origination
-    # is an event, not a usage threshold) get a second NAMED body in target.py,
-    # dispatched on `kind` — never an inline if-product branch in a caller.
-    kind: Literal["usage_threshold", "product_flag", "origination"]
-    window_months: int = Field(ge=1, description="activation window after obs_date")
-    min_usage: Optional[float] = None       # kind=usage_threshold
-    flag_col: Optional[str] = None          # kind=product_flag / origination
-    activity_table: Optional[str] = None    # forward-window source, if needed
 
 
 class ModelSpec(BaseModel):
@@ -39,7 +27,7 @@ class ModelSpec(BaseModel):
 
 class RunConfig(BaseModel):
     product: str
-    table: str                      # Hive feature snapshot (parquet-backed)
+    table: str                      # Hive table name OR HDFS parquet path of the snapshot
     id_col: str = "cif"
     month_col: str = "snapshot_month"
 
@@ -47,16 +35,18 @@ class RunConfig(BaseModel):
     oot_date: date                  # OOT validation month
     infer_date: date                # scoring month
 
-    features_include: list[str]     # curated candidate set — NO auto-selection
+    features_include: list[str]     # curated candidate set — NO automated selection
     features_exclude: list[str] = []
     eligibility_expr: Optional[str] = None   # product-specific Spark filter, hardcoded
 
-    target: TargetSpec
+    target_col: str                 # column materialised during Data Creation
+    window_months: int = Field(ge=1)  # forward window the target was built with
+
     model: ModelSpec
 
-    metric: str = "roc_auc"                          # declared BEFORE results
-    baseline: Literal["population_base_rate"] = "population_base_rate"
-    min_base_rate: float = 0.001                     # sanity-tripwire band
+    metric: str = "roc_auc"                     # declared BEFORE results
+    baseline: str = "population_base_rate"
+    min_base_rate: float = 0.001                # sanity-tripwire band
     max_base_rate: float = 0.60
 
     @field_validator("features_include")
@@ -78,11 +68,10 @@ class RunConfig(BaseModel):
         if not (self.obs_date < self.oot_date < self.infer_date):
             raise ValueError("require obs_date < oot_date < infer_date")
         gap = _month_diff(self.obs_date, self.oot_date)
-        if gap < self.target.window_months:
+        if gap < self.window_months:
             raise ValueError(
-                f"oot_date must be >= window_months ({self.target.window_months}m) "
-                f"after obs_date so train/OOT activation windows do not overlap; "
-                f"got {gap}m"
+                f"oot_date must be >= window_months ({self.window_months}m) after "
+                f"obs_date so train/OOT target windows do not overlap; got {gap}m"
             )
         return self
 
@@ -96,7 +85,7 @@ def _month_diff(a: date, b: date) -> int:
     return (b.year - a.year) * 12 + (b.month - a.month)
 
 
-def load_config(path: str | Path) -> RunConfig:
+def load_config(path):
     """Fails loud on a bad config — before any Spark read or FLAML run."""
     with open(path) as fh:
         raw = yaml.safe_load(fh)

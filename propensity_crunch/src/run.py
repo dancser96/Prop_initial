@@ -18,10 +18,10 @@ from flaml import AutoML
 
 from src.card import write_card
 from src.contract import assert_training_contract
+from src.dataset import load_labelled
 from src.evaluate import oot_evaluate
 from src.io import load_snapshot
 from src.leakage import leakage_report
-from src.target import build_target
 
 ART_ROOT = Path("artifacts")
 
@@ -35,8 +35,7 @@ def run(cfg, spark) -> dict:
     feats = cfg.features
 
     # --- TRAIN month (obs) ------------------------------------------------
-    Xtr = load_snapshot(spark, cfg, cfg.obs_date)
-    ytr = _aligned_target(spark, cfg, cfg.obs_date, Xtr)
+    Xtr, ytr = load_labelled(spark, cfg, cfg.obs_date)
     assert_training_contract(Xtr, ytr, cfg)
 
     # leakage screen — WRITE for human review, do NOT auto-drop
@@ -58,8 +57,7 @@ def run(cfg, spark) -> dict:
     )
 
     # --- OOT evaluation (external, later month) ---------------------------
-    Xoot = load_snapshot(spark, cfg, cfg.oot_date)
-    yoot = _aligned_target(spark, cfg, cfg.oot_date, Xoot)
+    Xoot, yoot = load_labelled(spark, cfg, cfg.oot_date)
     soot = automl.predict_proba(Xoot[feats])[:, 1]
     metrics = oot_evaluate(yoot, soot, cfg.metric)
     (out / "oot_metrics.json").write_text(json.dumps(metrics, indent=2))
@@ -87,12 +85,6 @@ def run(cfg, spark) -> dict:
 
 
 # --------------------------------------------------------------------------
-def _aligned_target(spark, cfg, month, X: pd.DataFrame) -> pd.Series:
-    # target indexed by id_col; reorder to X, unmatched CIF => 0 (no activation).
-    y = build_target(spark, cfg, month)
-    return y.reindex(X[cfg.id_col]).fillna(0).astype(int).reset_index(drop=True)
-
-
 def _run_id(cfg) -> str:
     return f"{_config_hash(cfg)}_{datetime.now():%Y%m%d-%H%M%S}"
 
