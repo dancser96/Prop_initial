@@ -1,6 +1,6 @@
-# Credit Cards — second example. Copy this shape per product; ONE schema.
+# Credit Cards — second example: imbalanced target -> downsample + auto-calibration.
 product: credit_cards
-table: "hdfs:///retail/snapshots/credit_cards"
+table: "hdfs:///retail/snapshots/modelling_panel"
 id_col: cif
 month_col: snapshot_month
 
@@ -14,9 +14,9 @@ features_include:
   - salary_band
   - avg_balance_3m
   - txn_count_3m
-  # ... the rest of the curated list
+  # ... rest of the curated list
 
-features_exclude: []       # decide in the Feature Checks notebook
+features_exclude: []         # decide in Feature Checks
 
 eligibility_expr: "eligible_segment = 1 AND is_cardholder = 0"
 
@@ -26,10 +26,16 @@ window_months: 3
 model:
   time_budget: 300
   estimator_list: [lgbm, xgboost, rf, extra_tree]
+  eval_method: cv
   n_splits: 5
+  ensemble: false
   seed: 42
 
-metric: roc_auc
+downsample:                  # low base rate -> all positives + 15 negatives each
+  neg_per_pos: 15
+calibration: prior_shift     # applied automatically because downsample is set
+
+metric: roc_auc            # roc_auc | ap | log_loss | f1 | macro_f1 | micro_f1 | accuracy (see _TEMPLATE)
 baseline: population_base_rate
 min_base_rate: 0.001
 max_base_rate: 0.60

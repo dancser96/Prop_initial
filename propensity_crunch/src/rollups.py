@@ -7,8 +7,10 @@ tables.
 
 Anchoring: `add_month_index` turns the month column into a contiguous integer
 so a window `rangeBetween` counts in whole months.
-  - `forward_rollup`  aggregates the NEXT `months` months  -> targets
-  - `backward_rollup` aggregates the PREVIOUS `months` months -> features
+  - `forward_rollup`  aggregates the NEXT `months` months, excluding the current
+    month (offsets 1..months)                                    -> targets
+  - `backward_rollup` aggregates the trailing `months` months, INCLUDING the
+    current month (offsets -(months-1)..0)                        -> features
 Missing months in the panel are simply absent from the range; the window stays
 correct.
 """
@@ -35,7 +37,8 @@ def forward_rollup(df, id_col, value_col, months, out_col,
 
 def backward_rollup(df, id_col, value_col, months, out_col,
                     order_col="month_idx", agg="sum"):
-    w = Window.partitionBy(id_col).orderBy(order_col).rangeBetween(-months, -1)
+    # trailing window ending at (and including) the current month
+    w = Window.partitionBy(id_col).orderBy(order_col).rangeBetween(-(months - 1), 0)
     return df.withColumn(out_col, _AGGS[agg](F.col(value_col)).over(w))
 
 

@@ -1,14 +1,14 @@
-# FX Activation — one of the topology-clean products, used as the template.
+# FX Activation — template product. See configs/_TEMPLATE.yaml for field docs.
 product: fx_activation
-table: "hdfs:///retail/snapshots/fx_activation"   # single output of Data Creation
+table: "hdfs:///retail/snapshots/modelling_panel"   # single panel shared by all products
 id_col: cif
 month_col: snapshot_month
 
-obs_date:   2026-03-01     # train / within-month CV
-oot_date:   2026-06-01     # OOT validation (3m gap == window; no overlap)
-infer_date: 2026-08-01     # scoring
+obs_date:   2026-03-01
+oot_date:   2026-06-01
+infer_date: 2026-08-01
 
-features_include:          # curated candidate set — NO automated selection
+features_include:
   - age
   - tenure_months
   - salary_band
@@ -17,24 +17,31 @@ features_include:          # curated candidate set — NO automated selection
   - travel_txn_flag_6m
   - foreign_merchant_txn_3m
   - digital_login_count_1m
-  - fx_txn_count_3m         # backward-rollup feature from Data Creation
-  # ... the rest of the curated list
+  # NB: FX-activity backward features (e.g. fx_txn_count_3m) are constant (0) for
+  # this product's eligible population (is_fx_active = 0 => no FX in the last 12m),
+  # so they carry no signal here — use non-FX features. They ARE useful for other
+  # products (e.g. reactivation), where prior FX activity is allowed.
 
-features_exclude:          # filled AFTER the Feature Checks notebook (human decision)
-  - fx_fwd_txn_3m           # the raw forward signal the target was built from — a leak
+features_exclude:
+  - fx_fwd_txn_3m           # raw forward signal the target was built from — a leak
 
-eligibility_expr: "eligible_segment = 1 AND is_fx_active = 0"   # eligible, not yet active
+eligibility_expr: "eligible_segment = 1 AND is_fx_active = 0"
 
-target_col: fx_activation_target   # materialised in Data Creation (forward rollup + threshold)
-window_months: 3                   # forward window used to build the target
+target_col: fx_activation_target
+window_months: 3
 
 model:
   time_budget: 300
   estimator_list: [lgbm, xgboost, rf, extra_tree]
+  eval_method: cv
   n_splits: 5
+  ensemble: false
   seed: 42
 
-metric: roc_auc            # declared BEFORE results
+# downsample:                # optional, train-only (target here isn't extreme, so off)
+#   neg_per_pos: 10
+
+metric: roc_auc            # roc_auc | ap | log_loss | f1 | macro_f1 | micro_f1 | accuracy (see _TEMPLATE)
 baseline: population_base_rate
 min_base_rate: 0.001
 max_base_rate: 0.60

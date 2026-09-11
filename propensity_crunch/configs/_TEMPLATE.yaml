@@ -1,0 +1,46 @@
+# CONFIG TEMPLATE — copy to <product>.yaml and fill the < > placeholders.
+# Every field a run depends on lives here; load_config() validates it on load.
+
+product: <product_name>
+table: "hdfs:///retail/snapshots/modelling_panel"   # single enriched panel (Data Creation output)
+id_col: cif
+month_col: snapshot_month               # column stamping each row's monthly snapshot
+
+# features as-of obs_date; label measured in the window AFTER it.
+# Enforced on load: obs < oot < infer, and (oot - obs) >= window_months.
+obs_date:   2026-03-01
+oot_date:   2026-06-01
+infer_date: 2026-08-01
+
+features_include:                        # candidate set (EDA + Feature Checks read this)
+  - <feature_1>
+  - <feature_2>
+features_exclude: []                     # model reads include - exclude (from Feature Checks)
+
+eligibility_expr: "<spark_filter>"       # e.g. "eligible_segment = 1 AND is_active = 0"
+
+target_col: <product>_activation_target  # materialised in Data Creation
+window_months: 3
+
+model:
+  time_budget: 300
+  estimator_list: [lgbm, xgboost, rf, extra_tree]
+  eval_method: cv
+  n_splits: 5
+  ensemble: false
+  seed: 42
+
+# downsample:                            # OPTIONAL, train-only; calibration auto-applies
+#   neg_per_pos: 10
+calibration: prior_shift                 # only used when downsample is set (swappable)
+
+metric: roc_auc                          # metric FLAML optimises + the OOT headline
+baseline: population_base_rate
+# Valid classification metrics to optimise on:
+#   roc_auc  - ranking quality (default; base-rate agnostic)
+#   ap       - average precision / area under PR curve (best for rare positives)
+#   log_loss - probability quality (penalises miscalibration)
+#   f1       - F1 at 0.5 threshold   | macro_f1 - F1 averaged over classes
+#   micro_f1 - F1 pooled over classes | accuracy - misleading if imbalanced (avoid)
+min_base_rate: 0.001
+max_base_rate: 0.60
